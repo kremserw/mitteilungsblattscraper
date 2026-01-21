@@ -11,7 +11,16 @@ from typing import List, Dict, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 import time
 
-from playwright.async_api import async_playwright, Browser, Page
+# Playwright is optional - scraping won't work without it but the app can still run
+try:
+    from playwright.async_api import async_playwright, Browser, Page
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    async_playwright = None
+    Browser = None
+    Page = None
+
 from bs4 import BeautifulSoup
 import requests
 

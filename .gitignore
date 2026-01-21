@@ -52,4 +52,7 @@ Thumbs.db
 
 # Distribution / packaging
 *.manifest
-*.spec
+
+# PyInstaller
+build/
+dist/
