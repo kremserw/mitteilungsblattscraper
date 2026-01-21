@@ -1,0 +1,26 @@
+# Web scraping
+playwright>=1.40.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+requests>=2.31.0
+
+# PDF processing
+pypdf2>=3.0.0
+pdfplumber>=0.10.0
+
+# Claude API
+anthropic>=0.18.0
+
+# Configuration
+pyyaml>=6.0.0
+
+# Database
+sqlalchemy>=2.0.0
+
+# Web UI
+flask>=3.0.0
+
+# Utilities
+python-dateutil>=2.8.0
+rich>=13.0.0      # Beautiful terminal output
+click>=8.1.0      # CLI framework

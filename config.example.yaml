@@ -1,0 +1,78 @@
+# JKU Mitteilungsblatt Analyzer Configuration
+# Copy this file to config.yaml and fill in your details
+
+# Your Anthropic API key for Claude Haiku
+anthropic_api_key: "sk-ant-api03-your-key-here"
+
+# Model to use (claude-3-5-haiku-20241022 is cheapest and good enough for this task)
+model: "claude-3-5-haiku-20241022"
+
+# Your role description - BE DETAILED!
+# The more context you provide, the better the AI can determine relevance.
+# Examples of what to include:
+#   - Your position (student, researcher, professor, staff)
+#   - Your faculty/department
+#   - Your study program(s)
+#   - Specific topics you care about
+#   - What decisions you need to make
+
+role_description: |
+  I am a Master's student in Artificial Intelligence at JKU Linz.
+  
+  I am interested in:
+  - Curriculum changes for AI, Computer Science, and Data Science programs
+  - New courses or course changes in machine learning, deep learning, and AI
+  - Research positions and PhD opportunities in AI/ML
+  - Scholarship and funding announcements
+  - Changes to examination regulations
+  - Thesis-related regulations and deadlines
+  - Any events, workshops, or seminars related to AI
+  - Changes to the academic calendar that affect my studies
+  
+  I am NOT interested in:
+  - Curricula for unrelated programs (law, medicine, etc.)
+  - Staff appointments in unrelated departments
+  - Administrative changes that don't affect students
+
+# Relevance threshold (0-100)
+# Items scoring above this will be highlighted as "relevant"
+relevance_threshold: 60
+
+# Scraping settings
+scraping:
+  # Base URL for the MTB portal
+  base_url: "https://ix.jku.at"
+  
+  # How many years back to check
+  years_to_scan: 2
+  
+  # Timeout for page loads (seconds)
+  timeout: 30
+  
+  # Download PDFs? (set to false to only analyze HTML)
+  download_pdfs: true
+  
+  # Maximum PDF size to download (MB)
+  max_pdf_size_mb: 50
+  
+  # Follow links in bulletin text? (within jku.at domain)
+  follow_links: true
+  
+  # Delay between requests (seconds) - be nice to the server
+  request_delay: 2
+
+# Storage settings
+storage:
+  # Database file
+  database: "data/mtb.db"
+  
+  # Cache directory for downloaded files
+  cache_dir: "data/cache"
+
+# Output settings
+output:
+  # Show full content or just summary?
+  show_full_content: false
+  
+  # Maximum items per page in list view
+  items_per_page: 20
