@@ -30,7 +30,27 @@ The web interface provides:
 - Anthropic API key (for Claude AI analysis)
 - Chrome/Chromium browser (for Playwright web scraping)
 
-## 🚀 Installation
+## 🚀 Quick Start (One-Click Launch)
+
+The easiest way to run the application:
+
+### On Windows (with WSL)
+1. Copy the entire folder anywhere you like
+2. Double-click `Start-MTB-Analyzer.bat`
+3. First run installs everything automatically (~3-5 min)
+4. Browser opens to http://localhost:8080
+
+### On Linux/Mac
+1. Copy the folder anywhere
+2. Run `./start-mtb-analyzer.sh`
+3. First run installs everything automatically
+4. Browser opens automatically
+
+**That's it!** The launcher handles virtual environment setup, dependency installation, and Playwright browser installation automatically on first run.
+
+## 🔧 Manual Installation
+
+If you prefer manual setup:
 
 ```bash
 # Clone the repository
@@ -144,19 +164,34 @@ A typical edition with 20-30 items costs approximately **$0.05-0.15** to analyze
 
 ```
 mitteilungsblattscraper/
-├── main.py              # CLI entry point
-├── config.yaml          # Your configuration (git-ignored)
-├── config.example.yaml  # Example configuration
-├── requirements.txt     # Python dependencies
+├── Start-MTB-Analyzer.bat  # 🖱️ Windows one-click launcher
+├── start-mtb-analyzer.sh   # 🖱️ Linux/Mac one-click launcher
+├── launcher.py             # Auto-opens browser on startup
+├── main.py                 # CLI entry point
+├── config.yaml             # Your configuration (git-ignored)
+├── config.example.yaml     # Example configuration template
+├── requirements.txt        # Python dependencies
 ├── src/
-│   ├── scraper.py      # Web scraping with Playwright
-│   ├── parser.py       # Content parsing utilities
-│   ├── analyzer.py     # Claude API integration
-│   ├── storage.py      # SQLite database operations
-│   └── ui.py           # Flask web interface
-└── data/
-    └── mtb.db          # SQLite database (git-ignored)
+│   ├── scraper.py         # Web scraping with Playwright
+│   ├── parser.py          # Content parsing utilities
+│   ├── analyzer.py        # Claude API integration
+│   ├── storage.py         # SQLite database operations
+│   └── ui.py              # Flask web interface
+├── data/
+│   └── mtb.db             # SQLite database (git-ignored)
+└── venv/                   # Virtual environment (auto-created)
 ```
+
+### Portable Deployment
+
+To deploy anywhere, copy these files:
+- ✅ `Start-MTB-Analyzer.bat` and `start-mtb-analyzer.sh` (launchers)
+- ✅ `launcher.py`, `main.py`, `requirements.txt`
+- ✅ `config.yaml` (with your API key)
+- ✅ `config.example.yaml`
+- ✅ `src/` folder (all source code)
+- ✅ `data/` folder (optional - keeps your existing data)
+- ❌ `venv/` folder (auto-created on first run)
 
 ## 🔒 Privacy & Security
 
