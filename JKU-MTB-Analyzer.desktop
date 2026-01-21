@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=JKU MTB Analyzer
+Comment=AI-powered relevance filtering for university bulletins
+Exec=/home/bobsoul/dev/projects/jku-mtb-analyzer/start-mtb-analyzer.sh
+Path=/home/bobsoul/dev/projects/jku-mtb-analyzer
+Terminal=true
+Icon=applications-internet
+Categories=Office;Education;
+StartupNotify=true

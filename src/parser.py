@@ -8,20 +8,8 @@ import re
 from typing import Optional, List, Dict
 from pathlib import Path
 
-# PDF libraries are optional
-try:
-    import pdfplumber
-    PDFPLUMBER_AVAILABLE = True
-except ImportError:
-    pdfplumber = None
-    PDFPLUMBER_AVAILABLE = False
-
-try:
-    from PyPDF2 import PdfReader
-    PYPDF2_AVAILABLE = True
-except ImportError:
-    PdfReader = None
-    PYPDF2_AVAILABLE = False
+import pdfplumber
+from PyPDF2 import PdfReader
 
 
 class PDFParser:
