@@ -1,4 +1,4 @@
-# JKU Mitteilungsblatt Analyzer v1.0
+# JKU Mitteilungsblatt Analyzer v1.1
 
 A local Python application that scrapes JKU's official bulletins (Mitteilungsblätter), analyzes them using Claude AI, and identifies content relevant to your specific role.
 
@@ -8,27 +8,47 @@ A local Python application that scrapes JKU's official bulletins (Mitteilungsbl�
 ## ✨ Features
 
 - 📰 **Automatic scraping** of JKU Mitteilungsblätter from ix.jku.at
-- 📎 **Attachment handling** - Extracts and links to PDF attachments
+- 📎 **Attachment handling** - Extracts and links to PDF attachments with reliable download proxy
 - 🔗 **Link extraction** - Captures all URLs from bulletin content
-- 🤖 **AI-powered relevance analysis** using Claude (configurable model)
-- 💾 **Persistent storage** - SQLite database tracks all editions and items
+- 🤖 **AI-powered relevance analysis** using Claude Haiku 4.5 (fast and cost-effective)
+- 💾 **Persistent storage** - SQLite database with automatic migrations
 - 🎯 **Role-based filtering** - Describe your role to get personalized relevance scoring
-- 🌐 **Web Dashboard** - Modern UI to browse, scan, scrape, and analyze bulletins
+- 🌐 **Web Dashboard** - Modern dark-themed UI with animated splash screen
 - 📅 **Date range filtering** - Scan and scrape editions within specific date ranges
+- 📊 **Sortable tables** - Click column headers to sort by any field
+- ✅ **Read tracking** - Items you've viewed are greyed out
+- 📝 **AI-generated titles** - Short 5-7 word summaries for each item
+- 📄 **On-demand PDF analysis** - Deep AI analysis of PDF attachments
+
+## 🆕 What's New in v1.1
+
+- **Splash Screen** - Animated loading screen while the server starts
+- **Unified Sync** - One-click "Sync New Editions" button (only processes editions newer than your last fully-processed one)
+- **Shutdown Button** - Gracefully stop the server from the dashboard
+- **Read Tracking** - Items you've viewed are visually marked as read
+- **AI Short Titles** - Each item gets a concise AI-generated title
+- **PDF Download Proxy** - Reliable PDF downloads through server-side proxy
+- **PDF AI Analysis** - Click to get deep AI analysis of PDF attachments
+- **Sortable Tables** - Click headers to sort (works correctly with edition IDs like 2026-10)
+- **Dark Mode Improvements** - White calendar icons, better contrast
+- **Firefox Preference** - App prefers Firefox for better PDF download handling
+- **Database Migrations** - Automatic schema updates for existing databases
+- **Performance** - SQLite optimizations (WAL mode, increased cache)
 
 ## 🖥️ Screenshots
 
 The web interface provides:
-- **Dashboard** - Overview stats, recent relevant items, and role description editor
-- **Editions** - List all editions with scan/scrape/reset controls
-- **Relevant Items** - Filtered view of items above your relevance threshold
-- **Item Detail** - Full content, AI summary, key points, links, attachments, and reasoning
+- **Dashboard** - Overview stats, one-click sync, recent relevant items, role description editor
+- **Editions** - List all editions with scan/scrape/reset controls, date filtering
+- **Relevant Items** - Filtered view with sortable columns, read tracking
+- **Item Detail** - Full content, AI summary, key points, PDF analysis button, links, attachments
 
 ## 📋 Prerequisites
 
 - Python 3.9+
 - Anthropic API key (for Claude AI analysis)
-- Chrome/Chromium browser (for Playwright web scraping)
+- Chrome or Firefox browser (Firefox preferred for PDF downloads)
+- Playwright browsers (auto-installed on first run)
 
 ## 🚀 Quick Start (One-Click Launch)
 
@@ -100,15 +120,18 @@ role_description: |
 ### Web Interface (Recommended)
 
 ```bash
+python launcher.py
+# or
 python main.py serve
 ```
 
 Open http://localhost:8080 in your browser. From there you can:
-- Scan for new editions (with date range filtering)
-- Scrape edition content (including attachments and links)
-- Run AI analysis to score relevance
-- Browse and filter relevant items
-- Click items to see full details, AI summary, and reasoning
+- **Sync New Editions** - One click to scan, scrape, and analyze new content
+- Browse editions with date range filtering
+- View AI-analyzed items with relevance scores
+- Click items to see full details, AI summary, and key points
+- Analyze PDF attachments on-demand with AI
+- Sort tables by clicking column headers
 
 ### Command Line
 
@@ -147,35 +170,37 @@ python main.py show 2026-1
 3. **Analysis**: Sends each item to Claude AI with your role description
 4. **Scoring**: Each item receives:
    - Relevance score (0-100%)
+   - Short AI-generated title (5-7 words)
    - Summary of why it matters to you
    - Key points extracted
    - Detailed reasoning
-5. **Storage**: All data stored in local SQLite database
+5. **Storage**: All data stored in local SQLite database with automatic migrations
 
 ## 💰 Cost Estimate
 
-Using Claude 3.5 Haiku (recommended for cost efficiency):
-- ~$0.80 per million input tokens
-- ~$4.00 per million output tokens
+Using Claude Haiku 4.5 (recommended for cost efficiency):
+- $1 per million input tokens
+- $5 per million output tokens
 
 A typical edition with 20-30 items costs approximately **$0.05-0.15** to analyze.
 
 ## 📁 Project Structure
 
 ```
-mitteilungsblattscraper/
+jku-mtb-analyzer/
 ├── Start-MTB-Analyzer.bat  # 🖱️ Windows one-click launcher
 ├── start-mtb-analyzer.sh   # 🖱️ Linux/Mac one-click launcher
-├── launcher.py             # Auto-opens browser on startup
+├── launcher.py             # Auto-opens browser with splash screen
 ├── main.py                 # CLI entry point
 ├── config.yaml             # Your configuration (git-ignored)
 ├── config.example.yaml     # Example configuration template
 ├── requirements.txt        # Python dependencies
+├── jku-mtb-analyzer.spec   # PyInstaller build specification
 ├── src/
 │   ├── scraper.py         # Web scraping with Playwright
-│   ├── parser.py          # Content parsing utilities
+│   ├── parser.py          # Content parsing and PDF extraction
 │   ├── analyzer.py        # Claude API integration
-│   ├── storage.py         # SQLite database operations
+│   ├── storage.py         # SQLite database with migrations
 │   └── ui.py              # Flask web interface
 ├── data/
 │   └── mtb.db             # SQLite database (git-ignored)
@@ -213,6 +238,15 @@ To deploy anywhere, copy these files:
 **API errors**
 - Verify your Anthropic API key is correct
 - Check your API quota/credits
+- Ensure you're using the correct model name (claude-haiku-4-5)
+
+**PDF downloads show wrong filename (Chrome on WSL2)**
+- The app now uses a proxy for PDF downloads which should fix this
+- If issues persist, try using Firefox instead of Chrome
+
+**Database migration errors**
+- The app automatically migrates existing databases
+- If issues occur, backup `data/mtb.db` and delete it to start fresh
 
 ## 📄 License
 

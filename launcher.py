@@ -10,6 +10,8 @@ import time
 import webbrowser
 import threading
 import signal
+import subprocess
+import shutil
 
 def get_app_dir():
     """Get the directory where the app/executable is located."""
@@ -19,6 +21,126 @@ def get_app_dir():
     else:
         # Running as script
         return os.path.dirname(os.path.abspath(__file__))
+
+
+def find_firefox():
+    """
+    Find Firefox browser executable.
+    Returns the path to Firefox if found, None otherwise.
+    """
+    firefox_candidates = []
+    
+    if sys.platform == 'win32':
+        firefox_candidates = [
+            os.path.expandvars(r'%PROGRAMFILES%\Mozilla Firefox\firefox.exe'),
+            os.path.expandvars(r'%PROGRAMFILES(X86)%\Mozilla Firefox\firefox.exe'),
+        ]
+    elif sys.platform == 'darwin':
+        firefox_candidates = [
+            '/Applications/Firefox.app/Contents/MacOS/firefox',
+        ]
+    else:
+        # Linux - check common executable names
+        for name in ['firefox', 'firefox-esr']:
+            path = shutil.which(name)
+            if path:
+                return path
+        
+        firefox_candidates = [
+            '/usr/bin/firefox',
+            '/usr/bin/firefox-esr',
+            '/snap/bin/firefox',
+        ]
+    
+    for path in firefox_candidates:
+        if os.path.exists(path):
+            return path
+    
+    return None
+
+
+def find_chrome():
+    """
+    Find Chrome/Chromium browser executable.
+    Returns the path to Chrome if found, None otherwise.
+    """
+    # List of possible Chrome executable names/paths
+    chrome_candidates = []
+    
+    if sys.platform == 'win32':
+        # Windows paths
+        chrome_candidates = [
+            os.path.expandvars(r'%PROGRAMFILES%\Google\Chrome\Application\chrome.exe'),
+            os.path.expandvars(r'%PROGRAMFILES(X86)%\Google\Chrome\Application\chrome.exe'),
+            os.path.expandvars(r'%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe'),
+        ]
+    elif sys.platform == 'darwin':
+        # macOS paths
+        chrome_candidates = [
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        ]
+    else:
+        # Linux - check common executable names
+        for name in ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']:
+            path = shutil.which(name)
+            if path:
+                return path
+        
+        # Also check common Linux paths
+        chrome_candidates = [
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+            '/snap/bin/chromium',
+        ]
+    
+    # Check each candidate path
+    for path in chrome_candidates:
+        if os.path.exists(path):
+            return path
+    
+    return None
+
+
+def open_browser(url: str):
+    """
+    Open URL in a browser. Prefers Firefox (better PDF handling), falls back to Chrome, then default.
+    Returns the browser name that was used.
+    """
+    # Try Firefox first (works better with PDF downloads)
+    firefox_path = find_firefox()
+    if firefox_path:
+        try:
+            subprocess.Popen([firefox_path, url],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            return 'Firefox'
+        except Exception as e:
+            print(f"⚠️  Could not launch Firefox: {e}")
+    
+    # Fall back to Chrome
+    chrome_path = find_chrome()
+    if chrome_path:
+        try:
+            subprocess.Popen([chrome_path, '--new-window', url], 
+                           stdout=subprocess.DEVNULL, 
+                           stderr=subprocess.DEVNULL)
+            return 'Chrome'
+        except Exception as e:
+            print(f"⚠️  Could not launch Chrome: {e}")
+    
+    # Fallback to default browser
+    print("⚠️  Firefox/Chrome not found, using default browser")
+    webbrowser.open(url)
+    return 'default'
+
+
+# Keep old function for compatibility
+def open_chrome(url: str):
+    """Deprecated: Use open_browser() instead."""
+    return open_browser(url)
 
 def main():
     # Set working directory to where the executable is
@@ -71,22 +193,36 @@ def main():
     
     # Print startup banner
     print("╭─────────────────────────────────────────────────────────╮")
-    print("│ JKU Mitteilungsblatt Analyzer v1.0                      │")
+    print("│ JKU Mitteilungsblatt Analyzer v1.1                      │")
     print("│ AI-powered relevance filtering for university bulletins │")
     print("╰─────────────────────────────────────────────────────────╯")
     print()
     print(f"📁 App directory: {app_dir}")
     print(f"🌐 Starting server at http://localhost:{port}")
     print()
-    print("Opening browser...")
+    
+    # Check for browsers (prefer Firefox for better PDF handling)
+    firefox_path = find_firefox()
+    chrome_path = find_chrome()
+    if firefox_path:
+        print(f"🌐 Found Firefox: {firefox_path} (preferred for PDF downloads)")
+    elif chrome_path:
+        print(f"🌐 Found Chrome: {chrome_path}")
+    else:
+        print("⚠️  No Firefox/Chrome found - will use default browser")
+    
     print()
-    print("Press Ctrl+C to stop the server and exit.")
+    print("Opening browser with splash screen...")
+    print()
+    print("Close the browser tab to stop the server and exit.")
+    print("Or press Ctrl+C in this terminal.")
     print()
     
     # Open browser after a short delay (give server time to start)
+    # Open to splash screen which will redirect when ready
     def open_browser():
         time.sleep(1.5)
-        webbrowser.open(f'http://localhost:{port}')
+        open_chrome(f'http://localhost:{port}/splash')
     
     browser_thread = threading.Thread(target=open_browser, daemon=True)
     browser_thread.start()

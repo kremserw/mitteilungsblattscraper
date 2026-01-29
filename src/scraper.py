@@ -612,6 +612,10 @@ class MTBScraper:
                         href = link.get('href', '')
                         link_text = link.get_text(strip=True)
                         
+                        # Decode HTML entities in the URL (e.g., &amp; -> &)
+                        import html
+                        href = html.unescape(href)
+                        
                         # Skip empty or icon-only links
                         if not href:
                             continue

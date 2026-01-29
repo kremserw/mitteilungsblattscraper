@@ -4,8 +4,8 @@
 # Your Anthropic API key for Claude Haiku
 anthropic_api_key: "sk-ant-api03-your-key-here"
 
-# Model to use (claude-3-5-haiku-20241022 is cheapest and good enough for this task)
-model: "claude-3-5-haiku-20241022"
+# Model to use (claude-haiku-4-5 is the latest Haiku - fast and cost-effective)
+model: "claude-haiku-4-5"
 
 # Your role description - BE DETAILED!
 # The more context you provide, the better the AI can determine relevance.

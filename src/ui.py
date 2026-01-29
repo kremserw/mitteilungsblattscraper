@@ -405,12 +405,252 @@ def run_analyze_task(config: dict, edition_id: str = None):
             task_status['error'] = str(e)
 
 
+def run_sync_all_task(config: dict):
+    """Run scan, scrape, and analyze for NEW editions only.
+    
+    Only processes editions that are newer than the most recent
+    already-scraped and analyzed edition.
+    """
+    from .scraper import run_scraper, scrape_edition
+    from .analyzer import BulletinAnalyzer
+    
+    try:
+        db_path = config.get('storage', {}).get('database', 'data/mtb.db')
+        storage = Storage(db_path)
+        
+        # Find the latest fully processed edition (scraped AND analyzed)
+        all_editions = storage.get_all_editions()
+        latest_processed = None
+        for ed in all_editions:
+            if ed.scraped_at and ed.analyzed_at:
+                latest_processed = ed
+                break
+        
+        # Phase 1: Scan
+        add_log("📡 Phase 1/3: Scanning for new editions...")
+        with task_lock:
+            task_status['task'] = 'sync: scanning'
+        
+        from_date = None
+        if latest_processed and latest_processed.published_date:
+            from_date = latest_processed.published_date
+            add_log(f"Looking for editions newer than {latest_processed.edition_id} ({from_date.strftime('%Y-%m-%d')})")
+        else:
+            add_log("No fully processed editions found - will scan recent editions only")
+            # Default to scanning last 30 days if no processed editions exist
+            from datetime import timedelta
+            from_date = datetime.now() - timedelta(days=30)
+        
+        editions = run_scraper(storage, config, from_date=from_date)
+        add_log(f"Found {len(editions)} editions in date range")
+        
+        # Phase 2: Scrape - only editions newer than latest processed
+        add_log("📥 Phase 2/3: Scraping new editions...")
+        with task_lock:
+            task_status['task'] = 'sync: scraping'
+        
+        # Get unscraped editions and filter to only those newer than latest processed
+        unscraped = storage.get_unscraped_editions()
+        if latest_processed:
+            # Filter to only editions newer than the latest processed one
+            # Compare by year and stueck number
+            new_unscraped = []
+            for ed in unscraped:
+                if ed.year > latest_processed.year:
+                    new_unscraped.append(ed)
+                elif ed.year == latest_processed.year and ed.stueck > latest_processed.stueck:
+                    new_unscraped.append(ed)
+            unscraped = new_unscraped
+        
+        if unscraped:
+            add_log(f"Found {len(unscraped)} new editions to scrape")
+            with task_lock:
+                task_status['total'] = len(unscraped)
+                task_status['progress'] = 0
+            
+            for i, ed in enumerate(unscraped):
+                add_log(f"Scraping {ed.edition_id}...")
+                try:
+                    scrape_edition(storage, config, ed.year, ed.stueck)
+                    add_log(f"  ✓ {ed.edition_id}")
+                except Exception as e:
+                    add_log(f"  ✗ {ed.edition_id}: {str(e)}")
+                
+                with task_lock:
+                    task_status['progress'] = i + 1
+        else:
+            add_log("No new editions to scrape")
+        
+        # Phase 3: Analyze - only editions newer than latest processed
+        add_log("🤖 Phase 3/3: Analyzing new editions...")
+        with task_lock:
+            task_status['task'] = 'sync: analyzing'
+        
+        # Refresh storage to get updated editions
+        storage.close()
+        storage = Storage(db_path)
+        analyzer = BulletinAnalyzer(storage, config)
+        
+        # Get unanalyzed editions and filter to only those newer than latest processed
+        unanalyzed = storage.get_unanalyzed_editions()
+        if latest_processed:
+            new_unanalyzed = []
+            for ed in unanalyzed:
+                if ed.year > latest_processed.year:
+                    new_unanalyzed.append(ed)
+                elif ed.year == latest_processed.year and ed.stueck > latest_processed.stueck:
+                    new_unanalyzed.append(ed)
+            unanalyzed = new_unanalyzed
+        
+        if unanalyzed:
+            add_log(f"Found {len(unanalyzed)} editions to analyze")
+            with task_lock:
+                task_status['total'] = len(unanalyzed)
+                task_status['progress'] = 0
+            
+            for i, ed in enumerate(unanalyzed):
+                add_log(f"Analyzing {ed.edition_id}...")
+                try:
+                    result = analyzer.analyze_edition(ed)
+                    items = result.get('items', 0)
+                    relevant = result.get('relevant', 0)
+                    add_log(f"  ✓ {ed.edition_id}: {items} items, {relevant} relevant")
+                except Exception as e:
+                    add_log(f"  ✗ {ed.edition_id}: {str(e)}")
+                
+                with task_lock:
+                    task_status['progress'] = i + 1
+        else:
+            add_log("No editions need analysis")
+        
+        with task_lock:
+            task_status['running'] = False
+            task_status['task'] = None
+        
+        add_log("✅ Sync complete!")
+        storage.close()
+        
+    except Exception as e:
+        import traceback
+        add_log(f"ERROR: {str(e)}")
+        add_log(f"Traceback: {traceback.format_exc()}")
+        with task_lock:
+            task_status['running'] = False
+            task_status['error'] = str(e)
+
+
+# Global flag for server readiness
+server_ready = False
+
+
 def create_web_app(storage: Storage, config: dict) -> Flask:
     """Create Flask web application."""
+    global server_ready
     app = Flask(__name__)
     
     # Store config reference for updates
     app.config['mtb_config'] = config
+    
+    # Mark server as ready after first request
+    @app.before_request
+    def mark_ready():
+        global server_ready
+        server_ready = True
+    
+    # Splash screen template
+    SPLASH_TEMPLATE = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>JKU MTB Analyzer - Loading</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <style>
+            :root {
+                --bg-primary: #0f172a;
+                --accent: #06b6d4;
+                --text-primary: #f1f5f9;
+            }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body {
+                font-family: 'Space Grotesk', sans-serif;
+                background: var(--bg-primary);
+                color: var(--text-primary);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background-image: radial-gradient(ellipse at center, rgba(6, 182, 212, 0.15) 0%, transparent 70%);
+            }
+            .splash {
+                text-align: center;
+                animation: fadeIn 0.5s ease-out;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .logo { font-size: 5em; margin-bottom: 20px; animation: bounce 2s infinite; }
+            @keyframes bounce {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-10px); }
+            }
+            h1 {
+                font-size: 2.5em;
+                background: linear-gradient(135deg, var(--accent), #8b5cf6);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                margin-bottom: 30px;
+            }
+            .loader {
+                width: 200px;
+                height: 4px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 2px;
+                margin: 0 auto 20px;
+                overflow: hidden;
+            }
+            .loader-bar {
+                height: 100%;
+                width: 30%;
+                background: linear-gradient(90deg, var(--accent), #8b5cf6);
+                border-radius: 2px;
+                animation: loading 1.5s ease-in-out infinite;
+            }
+            @keyframes loading {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(400%); }
+            }
+            .status { color: #94a3b8; font-size: 1.1em; }
+        </style>
+    </head>
+    <body>
+        <div class="splash">
+            <div class="logo">🎓</div>
+            <h1>JKU MTB Analyzer</h1>
+            <div class="loader"><div class="loader-bar"></div></div>
+            <p class="status">Initializing...</p>
+        </div>
+        <script>
+            function checkReady() {
+                fetch('/api/ready')
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.ready) {
+                            document.querySelector('.status').textContent = 'Ready! Redirecting...';
+                            setTimeout(() => window.location.href = '/', 500);
+                        } else {
+                            setTimeout(checkReady, 500);
+                        }
+                    })
+                    .catch(() => setTimeout(checkReady, 500));
+            }
+            checkReady();
+        </script>
+    </body>
+    </html>
+    '''
     
     # Base HTML template with modern styling
     BASE_TEMPLATE = '''
@@ -939,6 +1179,78 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
             .save-indicator.show {
                 opacity: 1;
             }
+            
+            /* Date input styling - white background for visibility */
+            input[type="date"] {
+                background-color: #ffffff;
+                color: #1a1a2e;
+                border: 1px solid #ccc;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 14px;
+            }
+            
+            input[type="date"]:focus {
+                outline: none;
+                border-color: var(--accent);
+                box-shadow: 0 0 0 2px rgba(0, 212, 170, 0.2);
+            }
+            
+            input[type="date"]::-webkit-calendar-picker-indicator {
+                cursor: pointer;
+                opacity: 0.7;
+            }
+            
+            input[type="date"]::-webkit-calendar-picker-indicator:hover {
+                opacity: 1;
+            }
+            
+            /* Read item styling */
+            tr.item-read {
+                opacity: 0.5;
+            }
+            
+            tr.item-read:hover {
+                opacity: 0.7;
+            }
+            
+            /* Sortable table headers */
+            th[data-sort-dir] {
+                user-select: none;
+            }
+            
+            th[data-sort-dir]:hover {
+                background: var(--border);
+            }
+            
+            /* Sync button animation */
+            .sync-phases {
+                display: flex;
+                gap: 8px;
+                margin-top: 12px;
+                flex-wrap: wrap;
+            }
+            
+            .sync-phase {
+                padding: 8px 16px;
+                border-radius: 8px;
+                background: var(--bg-tertiary);
+                font-size: 0.85em;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            
+            .sync-phase.active {
+                background: var(--accent);
+                color: white;
+                animation: pulse 1.5s infinite;
+            }
+            
+            .sync-phase.done {
+                background: var(--success);
+                color: white;
+            }
         </style>
     </head>
     <body>
@@ -964,6 +1276,8 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
         <script>
             let pollInterval = null;
             
+            let lastTaskWasRunning = false;
+            
             function updateStatus() {
                 fetch('/api/task-status')
                     .then(r => r.json())
@@ -973,6 +1287,7 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
                         const logContent = document.querySelector('.log-content');
                         const progressFill = document.querySelector('.progress-fill');
                         const buttons = document.querySelectorAll('.action-buttons .btn');
+                        const syncPhases = document.getElementById('sync-phases');
                         
                         if (statusDot) {
                             statusDot.className = 'status-dot ' + (data.running ? 'running' : (data.error ? 'error' : 'success'));
@@ -988,8 +1303,8 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
                             logContent.innerHTML = data.logs.map(log => {
                                 let cls = 'log-line';
                                 if (log.includes('ERROR')) cls += ' error';
-                                else if (log.includes('✓') || log.includes('complete')) cls += ' success';
-                                else if (log.includes('Starting') || log.includes('Found')) cls += ' info';
+                                else if (log.includes('✓') || log.includes('complete') || log.includes('Complete')) cls += ' success';
+                                else if (log.includes('Starting') || log.includes('Found') || log.includes('Phase')) cls += ' info';
                                 return `<div class="${cls}">${log}</div>`;
                             }).join('');
                             logContent.scrollTop = logContent.scrollHeight;
@@ -998,6 +1313,8 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
                         if (progressFill && data.total > 0) {
                             const pct = (data.progress / data.total) * 100;
                             progressFill.style.width = pct + '%';
+                        } else if (progressFill && !data.running) {
+                            progressFill.style.width = '0%';
                         }
                         
                         buttons.forEach(btn => {
@@ -1006,6 +1323,37 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
                             }
                         });
                         
+                        // Update sync phases display
+                        if (syncPhases) {
+                            if (data.task && data.task.startsWith('sync:')) {
+                                syncPhases.style.display = 'flex';
+                                const phase = data.task.split(':')[1].trim();
+                                
+                                ['scan', 'scrape', 'analyz'].forEach(p => {
+                                    const el = document.getElementById('phase-' + (p === 'analyz' ? 'analyze' : p));
+                                    if (el) {
+                                        el.classList.remove('active', 'done');
+                                        if (phase.includes(p)) {
+                                            el.classList.add('active');
+                                        } else if (
+                                            (p === 'scan' && (phase.includes('scrape') || phase.includes('analyz'))) ||
+                                            (p === 'scrape' && phase.includes('analyz'))
+                                        ) {
+                                            el.classList.add('done');
+                                        }
+                                    }
+                                });
+                            } else if (!data.running) {
+                                // Keep showing completed state briefly
+                                setTimeout(() => {
+                                    if (!data.running) {
+                                        syncPhases.style.display = 'none';
+                                    }
+                                }, 3000);
+                            }
+                        }
+                        
+                        // Always update stats on dashboard
                         if (window.location.pathname === '/') {
                             fetch('/api/stats')
                                 .then(r => r.json())
@@ -1019,6 +1367,19 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
                                     }
                                 });
                         }
+                        
+                        // When task completes, refresh the page data
+                        if (lastTaskWasRunning && !data.running) {
+                            // Task just completed - refresh relevant data
+                            setTimeout(() => {
+                                if (window.location.pathname === '/editions') {
+                                    location.reload();
+                                } else if (window.location.pathname === '/relevant') {
+                                    location.reload();
+                                }
+                            }, 1500);
+                        }
+                        lastTaskWasRunning = data.running;
                         
                         if (!data.running && pollInterval) {
                             setTimeout(() => {
@@ -1103,6 +1464,145 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
                 updateStatus();
                 pollInterval = setInterval(updateStatus, 2000);
             });
+            
+            // Note: Automatic shutdown on tab close removed - use the Shutdown button instead
+            // The beforeunload event fires on all navigation, making it unreliable
+            
+            function shutdownServer() {
+                if (confirm('Are you sure you want to shut down the server? This will close the application.')) {
+                    fetch('/api/shutdown', { method: 'POST' })
+                        .then(() => {
+                            document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;"><h1 style="color:#06b6d4;">Server Shut Down</h1><p style="color:#94a3b8;margin-top:20px;">You can close this tab now.</p></div>';
+                        });
+                }
+            }
+            
+            function syncAll() {
+                fetch('/api/sync-all', { method: 'POST' })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.started) {
+                            if (!pollInterval) {
+                                pollInterval = setInterval(updateStatus, 1000);
+                            }
+                            updateStatus();
+                        } else {
+                            alert(data.error || 'Failed to start sync');
+                        }
+                    });
+            }
+            
+            function markItemRead(itemId) {
+                fetch('/api/mark-read/' + itemId, { method: 'POST' });
+            }
+            
+            function analyzePdf(itemId) {
+                const btn = event.target;
+                btn.disabled = true;
+                btn.textContent = 'Analyzing...';
+                
+                fetch('/api/analyze-pdf/' + itemId, { method: 'POST' })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Show the analysis in a new section
+                            const container = document.getElementById('pdf-analysis-result');
+                            if (container) {
+                                container.innerHTML = '<div class="detail-content" style="margin-top: 16px;">' + 
+                                    data.analysis.replace(/\\n/g, '<br>').replace(/### /g, '<h4>').replace(/## /g, '<h3>') + 
+                                    '</div>';
+                                container.style.display = 'block';
+                            }
+                            btn.textContent = 'Analysis Complete';
+                            btn.classList.remove('btn-primary');
+                            btn.classList.add('btn-success');
+                        } else {
+                            alert('Analysis failed: ' + (data.error || 'Unknown error'));
+                            btn.disabled = false;
+                            btn.textContent = 'Analyze PDFs';
+                        }
+                    })
+                    .catch(err => {
+                        alert('Analysis failed: ' + err);
+                        btn.disabled = false;
+                        btn.textContent = 'Analyze PDFs';
+                    });
+            }
+            
+            // Sortable table functionality
+            function sortTable(table, column, asc = true) {
+                const tbody = table.querySelector('tbody') || table;
+                const rows = Array.from(tbody.querySelectorAll('tr:not(:first-child)'));
+                
+                rows.sort((a, b) => {
+                    const aVal = a.children[column].textContent.trim();
+                    const bVal = b.children[column].textContent.trim();
+                    
+                    // Handle edition IDs (e.g., "2026-1", "2026-10")
+                    const editionPattern = /^(\d{4})-(\d+)$/;
+                    const aEdition = aVal.match(editionPattern);
+                    const bEdition = bVal.match(editionPattern);
+                    
+                    if (aEdition && bEdition) {
+                        const aYear = parseInt(aEdition[1]);
+                        const bYear = parseInt(bEdition[1]);
+                        const aNum = parseInt(aEdition[2]);
+                        const bNum = parseInt(bEdition[2]);
+                        
+                        if (aYear !== bYear) {
+                            return asc ? aYear - bYear : bYear - aYear;
+                        }
+                        return asc ? aNum - bNum : bNum - aNum;
+                    }
+                    
+                    // Try numeric sort (for scores, percentages, punkt numbers)
+                    const aNum = parseFloat(aVal.replace('%', ''));
+                    const bNum = parseFloat(bVal.replace('%', ''));
+                    
+                    if (!isNaN(aNum) && !isNaN(bNum)) {
+                        return asc ? aNum - bNum : bNum - aNum;
+                    }
+                    
+                    // Fall back to string sort
+                    return asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                });
+                
+                rows.forEach(row => tbody.appendChild(row));
+            }
+            
+            function makeSortable(table) {
+                const headers = table.querySelectorAll('th');
+                headers.forEach((th, index) => {
+                    th.style.cursor = 'pointer';
+                    th.setAttribute('data-sort-dir', 'none');
+                    th.addEventListener('click', () => {
+                        const currentDir = th.getAttribute('data-sort-dir');
+                        const newDir = currentDir === 'asc' ? 'desc' : 'asc';
+                        
+                        // Reset all headers
+                        headers.forEach(h => {
+                            h.setAttribute('data-sort-dir', 'none');
+                            h.textContent = h.textContent.replace(' ▲', '').replace(' ▼', '');
+                        });
+                        
+                        // Set this header
+                        th.setAttribute('data-sort-dir', newDir);
+                        th.textContent += newDir === 'asc' ? ' ▲' : ' ▼';
+                        
+                        sortTable(table, index, newDir === 'asc');
+                        
+                        // Save preference
+                        localStorage.setItem('sortColumn', index);
+                        localStorage.setItem('sortDir', newDir);
+                    });
+                });
+            }
+            
+            // Initialize sortable tables on relevant page
+            document.addEventListener('DOMContentLoaded', () => {
+                const tables = document.querySelectorAll('table');
+                tables.forEach(makeSortable);
+            });
         </script>
     </body>
     </html>
@@ -1131,25 +1631,30 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
     
     <div class="panel">
         <div class="panel-header">
-            <h2>⚡ Actions</h2>
+            <h2>⚡ Sync</h2>
             <div class="status-indicator">
                 <span class="status-dot"></span>
                 <span class="status-text">Idle</span>
             </div>
         </div>
+        <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 0.9em;">
+            Sync editions newer than the last fully processed one (scan → scrape → analyze).
+        </p>
         <div class="action-buttons">
-            <button class="btn btn-primary" onclick="startTask('scan')">
-                🔍 Scan for New Editions
-            </button>
-            <button class="btn btn-primary" onclick="startTask('scrape')">
-                📥 Scrape All Unscraped
-            </button>
-            <button class="btn btn-primary" onclick="startTask('analyze')">
-                🤖 Analyze All Unanalyzed
+            <button class="btn btn-primary" onclick="syncAll()" style="padding: 16px 32px; font-size: 1.1em;" title="Only syncs editions newer than the last fully processed one">
+                🚀 Sync New Editions
             </button>
             <button class="btn btn-secondary no-disable" onclick="location.reload()">
                 🔄 Refresh
             </button>
+            <button class="btn btn-danger no-disable" onclick="shutdownServer()" style="margin-left: auto;">
+                ⏻ Shutdown
+            </button>
+        </div>
+        <div class="sync-phases" id="sync-phases" style="display: none;">
+            <div class="sync-phase" id="phase-scan">📡 Scan</div>
+            <div class="sync-phase" id="phase-scrape">📥 Scrape</div>
+            <div class="sync-phase" id="phase-analyze">🤖 Analyze</div>
         </div>
         <div class="progress-bar">
             <div class="progress-fill" style="width: 0%"></div>
@@ -1238,7 +1743,7 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
                 🔍 Scan for New
             </button>
             <button class="btn btn-primary" onclick="startTask('scrape')">
-                📥 Scrape (in date range)
+                📥 Scrape
             </button>
             <button class="btn btn-primary" onclick="startTask('analyze')">
                 🤖 Analyze All
@@ -1311,35 +1816,37 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
             <label>Minimum Score:</label>
             <input type="number" name="threshold" value="{{ threshold }}" min="0" max="100" style="width: 80px;" />
             <button type="submit" class="btn btn-secondary">Filter</button>
-            </form>
-        </div>
+        </form>
+    </div>
+    <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.85em;">
+        💡 Click column headers to sort. Click rows to view details. Read items are greyed out.
+    </p>
     
     {% if items %}
-        <table>
+        <table id="relevant-table">
             <tr>
                 <th>Edition</th>
-            <th>Pkt.</th>
+                <th>Pkt.</th>
                 <th>Category</th>
-                <th>Title</th>
+                <th>AI Title</th>
                 <th>Score</th>
-            <th>Summary</th>
+                <th>Summary</th>
             </tr>
             {% for item in items %}
-        <tr class="clickable" onclick="window.location='/item/{{ item.id }}'">
+            <tr class="clickable {{ 'item-read' if item.read_at else '' }}" onclick="markItemRead({{ item.id }}); window.location='/item/{{ item.id }}'">
                 <td>{{ item.edition.edition_id if item.edition else '?' }}</td>
-            <td style="font-weight: 600; color: var(--accent-color);">{{ item.punkt or '-' }}</td>
+                <td style="font-weight: 600; color: var(--accent);">{{ item.punkt or '-' }}</td>
                 <td>{{ item.category or '-' }}</td>
-            <td>{{ item.title[:50] if item.title else '-' }}{% if item.title and item.title|length > 50 %}...{% endif %}</td>
+                <td>{{ item.short_title if item.short_title else (item.title[:50] if item.title else '-') }}{% if not item.short_title and item.title and item.title|length > 50 %}...{% endif %}</td>
                 <td><span class="score {{ 'score-high' if item.relevance_score >= 80 else 'score-medium' }}">
                     {{ item.relevance_score|round|int }}%
                 </span></td>
-            <td style="max-width: 250px; font-size: 0.9em; color: var(--text-secondary);">
-                {{ item.relevance_explanation[:100] if item.relevance_explanation else '-' }}{% if item.relevance_explanation and item.relevance_explanation|length > 100 %}...{% endif %}
-            </td>
+                <td style="max-width: 250px; font-size: 0.9em; color: var(--text-secondary);">
+                    {{ item.relevance_explanation[:100] if item.relevance_explanation else '-' }}{% if item.relevance_explanation and item.relevance_explanation|length > 100 %}...{% endif %}
+                </td>
             </tr>
             {% endfor %}
         </table>
-    <p style="margin-top: 16px; color: var(--text-muted); font-size: 0.9em;">💡 Click on any row to see full details</p>
     {% else %}
     <div class="empty-state">
         <div class="empty-state-icon">🔍</div>
@@ -1415,12 +1922,21 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
         {% if item.attachments %}
         <div class="detail-section">
             <h3>📎 Attachments</h3>
-            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
                 {% for att in item.attachments %}
-                <a href="{{ att.url }}" target="_blank" rel="noopener" class="external-link" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--bg-tertiary); border-radius: 6px; text-decoration: none;">
+                <a href="/api/download-pdf?url={{ att.url | urlencode }}&filename={{ (att.name or 'document.pdf') | urlencode }}" class="external-link" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--bg-tertiary); border-radius: 6px; text-decoration: none;">
                     📄 {{ att.name or att.url.split('/')[-1] or 'Download' }}
                 </a>
                 {% endfor %}
+                <button class="btn btn-primary btn-sm" onclick="analyzePdf({{ item.id }})" style="margin-left: 16px;">
+                    🤖 Analyze PDFs with AI
+                </button>
+            </div>
+            <div id="pdf-analysis-result" style="display: {% if item.pdf_analysis %}block{% else %}none{% endif %}; margin-top: 16px;">
+                {% if item.pdf_analysis %}
+                <h4 style="color: var(--accent); margin-bottom: 12px;">📊 PDF Analysis</h4>
+                <div class="detail-content" style="white-space: pre-wrap;">{{ item.pdf_analysis }}</div>
+                {% endif %}
             </div>
         </div>
         {% endif %}
@@ -1445,7 +1961,8 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
     @app.route('/')
     def dashboard():
         stats = storage.get_stats()
-        recent_items = storage.get_relevant_items(threshold=60)[:10]
+        # Get recent items sorted by analysis date (recency), not relevance score
+        recent_items = storage.get_recent_relevant_items(threshold=60, limit=10)
         role_description = config.get('role_description', '')
         template = BASE_TEMPLATE.replace('{% block content %}{% endblock %}', DASHBOARD_CONTENT)
         return render_template_string(template, stats=stats, recent_items=recent_items, 
@@ -1469,6 +1986,9 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
         item = storage.session.query(BulletinItem).filter_by(id=item_id).first()
         if not item:
             return redirect(url_for('relevant'))
+        
+        # Mark item as read
+        storage.mark_item_read(item_id)
         
         # Process content to extract links and clean text
         content = item.content or ''
@@ -1694,6 +2214,124 @@ def create_web_app(storage: Storage, config: dict) -> Flask:
             return jsonify({'reset': True})
         except Exception as e:
             return jsonify({'reset': False, 'error': str(e)})
+    
+    @app.route('/splash')
+    def splash():
+        """Show splash screen while server initializes."""
+        return render_template_string(SPLASH_TEMPLATE)
+    
+    @app.route('/api/ready')
+    def api_ready():
+        """Check if server is ready."""
+        return jsonify({'ready': server_ready})
+    
+    @app.route('/api/shutdown', methods=['POST'])
+    def api_shutdown():
+        """Shutdown the server gracefully."""
+        import signal
+        import os
+        
+        add_log("🛑 Shutdown requested...")
+        
+        def shutdown_server():
+            import time
+            time.sleep(0.5)  # Give time for response to be sent
+            os._exit(0)
+        
+        # Start shutdown in background thread
+        shutdown_thread = threading.Thread(target=shutdown_server)
+        shutdown_thread.daemon = True
+        shutdown_thread.start()
+        
+        return jsonify({'shutdown': True, 'message': 'Server shutting down...'})
+    
+    @app.route('/api/sync-all', methods=['POST'])
+    def api_sync_all():
+        """Run scan, scrape, and analyze in sequence."""
+        with task_lock:
+            if task_status['running']:
+                return jsonify({'started': False, 'error': 'Another task is running'})
+            task_status['running'] = True
+            task_status['task'] = 'sync: starting'
+            task_status['progress'] = 0
+            task_status['total'] = 0
+            task_status['error'] = None
+        
+        thread = threading.Thread(target=run_sync_all_task, args=(config,))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({'started': True})
+    
+    @app.route('/api/mark-read/<int:item_id>', methods=['POST'])
+    def api_mark_read(item_id):
+        """Mark an item as read."""
+        try:
+            success = storage.mark_item_read(item_id)
+            return jsonify({'marked': success})
+        except Exception as e:
+            return jsonify({'marked': False, 'error': str(e)})
+    
+    @app.route('/api/analyze-pdf/<int:item_id>', methods=['POST'])
+    def api_analyze_pdf(item_id):
+        """Analyze an item's PDF attachments with Claude."""
+        try:
+            from .analyzer import BulletinAnalyzer
+            
+            item = storage.get_item_by_id(item_id)
+            if not item:
+                return jsonify({'success': False, 'error': 'Item not found'})
+            
+            if not item.attachments:
+                return jsonify({'success': False, 'error': 'No attachments to analyze'})
+            
+            add_log(f"Analyzing PDFs for item {item_id}...")
+            
+            analyzer = BulletinAnalyzer(storage, config)
+            analysis = analyzer.analyze_item_with_pdf(item)
+            
+            add_log(f"✓ PDF analysis complete for item {item_id}")
+            
+            return jsonify({'success': True, 'analysis': analysis})
+        except Exception as e:
+            add_log(f"✗ PDF analysis failed: {str(e)}")
+            return jsonify({'success': False, 'error': str(e)})
+    
+    @app.route('/api/download-pdf')
+    def api_download_pdf():
+        """Proxy endpoint to download PDFs with correct filename."""
+        import requests
+        from flask import Response
+        import html
+        
+        url = request.args.get('url', '')
+        filename = request.args.get('filename', 'document.pdf')
+        
+        if not url:
+            return jsonify({'error': 'No URL provided'}), 400
+        
+        # Decode HTML entities in URL
+        url = html.unescape(url)
+        
+        try:
+            # Download the PDF from the external server
+            resp = requests.get(url, timeout=30, stream=True)
+            resp.raise_for_status()
+            
+            # Get content type from response or default to PDF
+            content_type = resp.headers.get('Content-Type', 'application/pdf')
+            
+            # Create response with proper headers
+            return Response(
+                resp.iter_content(chunk_size=8192),
+                content_type=content_type,
+                headers={
+                    'Content-Disposition': f'attachment; filename="{filename}"',
+                    'Cache-Control': 'no-cache'
+                }
+            )
+        except Exception as e:
+            return jsonify({'error': f'Failed to download: {str(e)}'}), 500
     
     return app
 
