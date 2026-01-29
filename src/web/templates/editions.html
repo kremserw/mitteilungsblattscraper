@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="panel">
+    <div class="panel-header">
+        <h2>📚 All Editions</h2>
+        <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span class="status-text">Idle</span>
+        </div>
+    </div>
+    
+    <div class="date-filters">
+        <div class="form-group">
+            <label>From Date</label>
+            <input type="date" id="date-from" />
+        </div>
+        <div class="form-group">
+            <label>To Date</label>
+            <input type="date" id="date-to" />
+        </div>
+        <button class="btn btn-secondary btn-sm no-disable" onclick="document.getElementById('date-from').value=''; document.getElementById('date-to').value='';">
+            Clear Dates
+        </button>
+    </div>
+    
+    <div class="action-buttons">
+        <button class="btn btn-primary" onclick="startTask('scan')">
+            🔍 Scan for New
+        </button>
+        <button class="btn btn-primary" onclick="startTask('scrape')">
+            📥 Scrape
+        </button>
+        <button class="btn btn-primary" onclick="startTask('analyze')">
+            🤖 Analyze All
+        </button>
+    </div>
+    <div class="progress-bar">
+        <div class="progress-fill" style="width: 0%"></div>
+    </div>
+    <div class="log-panel">
+        <div class="log-header">
+            <span>Activity Log</span>
+            <button class="btn btn-secondary btn-sm no-disable" onclick="fetch('/api/tasks/clear-logs', {method:'POST'}).then(() => updateStatus())">Clear</button>
+        </div>
+        <div class="log-content"></div>
+    </div>
+</div>
+
+{% if editions %}
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Title</th>
+            <th>Published</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+        {% for ed in editions %}
+        <tr id="{{ ed.edition_id }}">
+            <td><strong>{{ ed.edition_id }}</strong></td>
+            <td>{{ ed.title[:50] if ed.title else '-' }}{% if ed.title and ed.title|length > 50 %}...{% endif %}</td>
+            <td>{{ ed.published_date.strftime('%Y-%m-%d') if ed.published_date else '-' }}</td>
+            <td>
+                {% if ed.analyzed_at %}
+                <span class="status-badge status-analyzed">✓ Analyzed</span>
+                {% elif ed.scraped_at %}
+                <span class="status-badge status-scraped">○ Scraped</span>
+                {% else %}
+                <span class="status-badge status-pending">· Pending</span>
+                {% endif %}
+            </td>
+            <td class="edition-actions">
+                {% if not ed.scraped_at %}
+                <button class="btn btn-secondary btn-sm" onclick="startTask('scrape', '{{ ed.edition_id }}')">Scrape</button>
+                {% elif not ed.analyzed_at %}
+                <button class="btn btn-secondary btn-sm" onclick="startTask('analyze', '{{ ed.edition_id }}')">Analyze</button>
+                {% else %}
+                <button class="btn btn-secondary btn-sm" onclick="startTask('analyze', '{{ ed.edition_id }}')">Re-analyze</button>
+                {% endif %}
+                {% if ed.scraped_at %}
+                <button class="btn btn-danger btn-sm no-disable" onclick="if(confirm('Reset {{ ed.edition_id }}? This will delete all items and require re-scraping.')) resetEdition('{{ ed.edition_id }}')">Reset</button>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon">📭</div>
+    <p>No editions found. Click "Scan for New" to discover editions.</p>
+</div>
+{% endif %}
+{% endblock %}

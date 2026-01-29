@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.total_editions }}</div>
+        <div class="stat-label">Total Editions</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.scraped_editions }}</div>
+        <div class="stat-label">Scraped</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.analyzed_editions }}</div>
+        <div class="stat-label">Analyzed</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.relevant_items }}</div>
+        <div class="stat-label">Relevant Items</div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <h2>⚡ Sync</h2>
+        <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span class="status-text">Idle</span>
+        </div>
+    </div>
+    <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 0.9em;">
+        Sync editions newer than the last fully processed one (scan → scrape → analyze).
+    </p>
+    <div class="action-buttons">
+        <button class="btn btn-primary" onclick="syncAll()" style="padding: 16px 32px; font-size: 1.1em;" title="Only syncs editions newer than the last fully processed one">
+            🚀 Sync New Editions
+        </button>
+        <button class="btn btn-secondary no-disable" onclick="location.reload()">
+            🔄 Refresh
+        </button>
+        <button class="btn btn-danger no-disable" onclick="shutdownServer()" style="margin-left: auto;">
+            ⏻ Shutdown
+        </button>
+    </div>
+    <div class="sync-phases" id="sync-phases" style="display: none;">
+        <div class="sync-phase" id="phase-scan">📡 Scan</div>
+        <div class="sync-phase" id="phase-scrape">📥 Scrape</div>
+        <div class="sync-phase" id="phase-analyze">🤖 Analyze</div>
+    </div>
+    <div class="progress-bar">
+        <div class="progress-fill" style="width: 0%"></div>
+    </div>
+    <div class="log-panel">
+        <div class="log-header">
+            <span>Activity Log</span>
+            <button class="btn btn-secondary btn-sm no-disable" onclick="fetch('/api/tasks/clear-logs', {method:'POST'}).then(() => updateStatus())">Clear</button>
+        </div>
+        <div class="log-content"></div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <h2>👤 Your Role Description</h2>
+        <div>
+            <button class="btn btn-success btn-sm no-disable" onclick="saveRoleDescription()">💾 Save</button>
+            <span id="save-indicator" class="save-indicator">✓ Saved!</span>
+        </div>
+    </div>
+    <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 0.9em;">
+        Describe your role and interests. The AI uses this to determine relevance of bulletin items.
+    </p>
+    <div class="role-editor">
+        <textarea id="role-description" placeholder="Describe your role, interests, and what you want to be notified about...">{{ role_description }}</textarea>
+    </div>
+</div>
+
+<h2 class="section-title">📌 Recent Relevant Items</h2>
+{% if recent_items %}
+<table>
+    <tr>
+        <th>Edition</th>
+        <th>Category</th>
+        <th>Title</th>
+        <th>Score</th>
+    </tr>
+    {% for item in recent_items %}
+    <tr class="clickable" onclick="window.location='/item/{{ item.id }}'">
+        <td>{{ item.edition.edition_id if item.edition else '?' }}</td>
+        <td>{{ item.category or '-' }}</td>
+        <td>{{ item.title[:60] if item.title else '-' }}{% if item.title and item.title|length > 60 %}...{% endif %}</td>
+        <td><span class="score {{ 'score-high' if item.relevance_score >= 80 else ('score-medium' if item.relevance_score >= 60 else 'score-low') }}">
+            {{ item.relevance_score|round|int }}%
+        </span></td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon">📭</div>
+    <p>No relevant items yet. Run Scan → Scrape → Analyze to find content.</p>
+</div>
+{% endif %}
+{% endblock %}

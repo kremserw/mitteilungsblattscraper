@@ -151,16 +151,11 @@ def main():
     if app_dir not in sys.path:
         sys.path.insert(0, app_dir)
     
-    # Import after setting up paths
-    import yaml
-    from src.storage import get_storage
-    from src.ui import run_web_server
-    
     # Configuration
     port = 8080
     config_path = os.path.join(app_dir, 'config.yaml')
     
-    # Check for config file
+    # Check for config file first (fast check before heavy imports)
     if not os.path.exists(config_path):
         example_config = os.path.join(app_dir, 'config.example.yaml')
         if os.path.exists(example_config):
@@ -174,12 +169,18 @@ def main():
             input("\nPress Enter to exit...")
             sys.exit(1)
     
-    # Load config
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+    # Now do heavy imports
+    from src.config import load_config, ConfigError
+    from src.db.repository import get_repository
+    from src.ui import run_web_server
     
-    # Store config path for saving changes
-    config['_config_path'] = config_path
+    # Load and validate config
+    try:
+        config = load_config(config_path)
+    except ConfigError as e:
+        print(f"❌ Configuration error: {e}")
+        input("\nPress Enter to exit...")
+        sys.exit(1)
     
     # Initialize storage
     db_path = config.get('storage', {}).get('database', 'data/mtb.db')
@@ -189,11 +190,11 @@ def main():
     # Ensure data directory exists
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     
-    storage = get_storage(db_path)
+    repository = get_repository(db_path)
     
     # Print startup banner
     print("╭─────────────────────────────────────────────────────────╮")
-    print("│ JKU Mitteilungsblatt Analyzer v1.1                      │")
+    print("│ JKU Mitteilungsblatt Analyzer v1.15                     │")
     print("│ AI-powered relevance filtering for university bulletins │")
     print("╰─────────────────────────────────────────────────────────╯")
     print()
@@ -236,7 +237,7 @@ def main():
     
     # Start the web server (blocks until stopped)
     try:
-        run_web_server(storage, config, port=port)
+        run_web_server(repository, config, port=port)
     except KeyboardInterrupt:
         print("\n\n👋 Shutting down...")
         sys.exit(0)

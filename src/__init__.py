@@ -1,16 +1,14 @@
 """
 JKU MTB Analyzer - AI-powered relevance filtering for university bulletins.
+
+This package uses lazy imports to optimize startup time.
+Import specific modules as needed rather than using wildcard imports.
 """
 
-from .storage import Storage, get_storage
-from .scraper import MTBScraper, run_scraper, scrape_edition
-from .parser import PDFParser, ContentProcessor
-from .analyzer import RelevanceAnalyzer, BulletinAnalyzer
+__version__ = "1.15.0"
+__all__ = ['__version__']
 
-__version__ = "1.0.0"
-__all__ = [
-    'Storage', 'get_storage',
-    'MTBScraper', 'run_scraper', 'scrape_edition',
-    'PDFParser', 'ContentProcessor',
-    'RelevanceAnalyzer', 'BulletinAnalyzer',
-]
+# Note: All imports are lazy. Use explicit imports like:
+#   from src.db.repository import Repository
+#   from src.core.scraper import MTBScraper
+#   from src.core.analyzer import RelevanceAnalyzer

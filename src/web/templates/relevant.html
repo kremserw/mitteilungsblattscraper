@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="section-title">🎯 Relevant Items</h2>
+<div class="filter-form">
+    <form method="get" style="display: flex; gap: 12px; align-items: center;">
+        <label>Minimum Score:</label>
+        <input type="number" name="threshold" value="{{ threshold }}" min="0" max="100" style="width: 80px;" />
+        <button type="submit" class="btn btn-secondary">Filter</button>
+    </form>
+</div>
+<p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.85em;">
+    💡 Click column headers to sort. Click rows to view details. Read items are greyed out.
+</p>
+
+{% if items %}
+    <table id="relevant-table">
+        <tr>
+            <th>Edition</th>
+            <th>Pkt.</th>
+            <th>Category</th>
+            <th>AI Title</th>
+            <th>Score</th>
+            <th>Summary</th>
+        </tr>
+        {% for item in items %}
+        <tr class="clickable {{ 'item-read' if item.read_at else '' }}" onclick="markItemRead({{ item.id }}); window.location='/item/{{ item.id }}'">
+            <td>{{ item.edition.edition_id if item.edition else '?' }}</td>
+            <td style="font-weight: 600; color: var(--accent);">{{ item.punkt or '-' }}</td>
+            <td>{{ item.category or '-' }}</td>
+            <td>{{ item.short_title if item.short_title else (item.title[:50] if item.title else '-') }}{% if not item.short_title and item.title and item.title|length > 50 %}...{% endif %}</td>
+            <td><span class="score {{ 'score-high' if item.relevance_score >= 80 else 'score-medium' }}">
+                {{ item.relevance_score|round|int }}%
+            </span></td>
+            <td style="max-width: 250px; font-size: 0.9em; color: var(--text-secondary);">
+                {{ item.relevance_explanation[:100] if item.relevance_explanation else '-' }}{% if item.relevance_explanation and item.relevance_explanation|length > 100 %}...{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon">🔍</div>
+    <p>No items found with relevance >= {{ threshold }}%</p>
+    <p style="margin-top: 10px; font-size: 0.9em;">Try lowering the threshold or run analysis first.</p>
+</div>
+{% endif %}
+{% endblock %}

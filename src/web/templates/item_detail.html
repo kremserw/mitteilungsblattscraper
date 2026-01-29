@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<a href="/relevant" class="back-link">← Back to Relevant Items</a>
+
+<div class="detail-card">
+    <div class="detail-header">
+        <h1 class="detail-title">{{ item.title or 'Untitled Item' }}</h1>
+        <div class="detail-meta">
+            <span>📅 Edition: <strong>{{ item.edition.edition_id if item.edition else '?' }}</strong></span>
+            <span>📌 Punkt: <strong>{{ item.punkt or '-' }}</strong></span>
+            <span>🏷️ Category: <strong>{{ item.category or '-' }}</strong></span>
+            <span class="score {{ 'score-high' if (item.relevance_score or 0) >= 80 else ('score-medium' if (item.relevance_score or 0) >= 60 else 'score-low') }}">
+                {{ item.relevance_score|round|int if item.relevance_score else 0 }}% Relevant
+            </span>
+        </div>
+    </div>
+    
+    <!-- Summary Section (What it is - no relevance reasoning) -->
+    <div class="detail-section" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1)); border-left: 4px solid var(--accent); padding: 16px 20px; border-radius: 8px;">
+        <h3 style="margin: 0 0 12px 0; color: var(--accent);">💡 Summary</h3>
+        {% if summary %}
+        <p style="margin: 0 0 10px 0; line-height: 1.5;">{{ summary }}</p>
+        {% if key_points %}
+        <ul style="margin: 0; padding-left: 20px; line-height: 1.4;">
+            {% for point in key_points %}<li style="margin-bottom: 4px;">{{ point }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% else %}
+        <p style="margin: 0; color: var(--text-secondary);">No analysis available yet. Run the analyzer to get insights.</p>
+        {% endif %}
+    </div>
+    
+    {% if item.edition and item.edition.url %}
+    <div class="detail-section">
+        <h3>🔗 Original Source</h3>
+        <a href="{{ item.edition.url }}" target="_blank" rel="noopener" class="external-link">
+            Open in JKU Portal →
+        </a>
+    </div>
+    {% endif %}
+    
+    {% if content_urls %}
+    <div class="detail-section">
+        <h3>🌐 Links in Content</h3>
+        <div class="attachments-list">
+            {% for url in content_urls %}
+            <a href="{{ url }}" target="_blank" rel="noopener" class="attachment-link">
+                🔗 {{ url[:60] }}{% if url|length > 60 %}...{% endif %}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if item.attachments %}
+    <div class="detail-section">
+        <h3>📎 Attachments</h3>
+        <div class="attachments-list">
+            {% for att in item.attachments %}
+            <a href="/pdf-proxy?url={{ att.url|urlencode }}" class="attachment-link" target="_blank">
+                📄 {{ att.name or 'Download Attachment' }}
+            </a>
+            {% endfor %}
+        </div>
+        
+        <div style="margin-top: 16px;">
+            <button class="btn btn-primary" onclick="analyzePdf({{ item.id }})">
+                🤖 Analyze PDF Contents
+            </button>
+        </div>
+        
+        <div id="pdf-analysis" style="margin-top: 16px;">
+            {% if item.pdf_analysis %}
+            <div class="pdf-analysis" style="white-space: pre-wrap; line-height: 1.6;">{{ item.pdf_analysis }}</div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    
+    <div class="detail-section">
+        <h3>📄 Full Content</h3>
+        <div class="detail-content">{{ item.content or 'No content available.' }}</div>
+    </div>
+    
+    {% if relevance or item.relevance_explanation %}
+    <div class="detail-section">
+        <h3>🤖 AI Analysis (Why this is relevant)</h3>
+        <div class="detail-content">{{ relevance or item.relevance_explanation }}</div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JKU MTB Analyzer</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <span class="logo-icon">📚</span>
+                <div>
+                    <h1>JKU MTB Analyzer</h1>
+                    <div class="subtitle">AI-powered relevance filtering for university bulletins</div>
+                </div>
+            </div>
+            <nav>
+                <a href="/" class="{{ 'active' if active_page == 'dashboard' }}">Dashboard</a>
+                <a href="/editions" class="{{ 'active' if active_page == 'editions' }}">Editions</a>
+                <a href="/relevant" class="{{ 'active' if active_page == 'relevant' }}">Relevant</a>
+            </nav>
+        </header>
+        
+        {% block content %}{% endblock %}
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

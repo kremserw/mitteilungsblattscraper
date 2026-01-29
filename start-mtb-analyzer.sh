@@ -11,7 +11,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
 echo "╭─────────────────────────────────────────────────────────╮"
-echo "│ JKU Mitteilungsblatt Analyzer v1.0                      │"
+echo "│ JKU Mitteilungsblatt Analyzer v1.15                     │"
 echo "│ AI-powered relevance filtering for university bulletins │"
 echo "╰─────────────────────────────────────────────────────────╯"
 echo ""
@@ -40,16 +40,9 @@ if [ ! -d "venv" ]; then
     fi
     echo "✅ Dependencies installed!"
     echo ""
-else
-    source venv/bin/activate
-fi
-
-# Check if Playwright browsers are installed
-PLAYWRIGHT_CHECK=$(venv/bin/python -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); p.chromium.executable_path; p.stop()" 2>&1)
-if echo "$PLAYWRIGHT_CHECK" | grep -q "Executable doesn't exist"; then
-    echo "🌐 Installing Playwright browser (first run only)..."
-    echo "   This may take a few minutes..."
-    echo ""
+    
+    # Install Playwright browser only on first setup
+    echo "🌐 Installing Playwright browser..."
     venv/bin/playwright install chromium
     if [ $? -ne 0 ]; then
         echo "⚠️  Browser installation may have issues."
@@ -58,6 +51,8 @@ if echo "$PLAYWRIGHT_CHECK" | grep -q "Executable doesn't exist"; then
         echo "✅ Browser installed!"
     fi
     echo ""
+else
+    source venv/bin/activate
 fi
 
 # Check for config file
@@ -85,7 +80,6 @@ if [ ! -f "config.yaml" ]; then
     exit 1
 fi
 
-echo ""
 echo "🚀 Starting application..."
 echo "   Your browser will open automatically to http://localhost:8080"
 echo ""

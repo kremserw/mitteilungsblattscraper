@@ -4,7 +4,7 @@ REM Double-click this file to start the application!
 
 echo.
 echo ========================================================
-echo   JKU Mitteilungsblatt Analyzer v1.0
+echo   JKU Mitteilungsblatt Analyzer v1.15
 echo   AI-powered relevance filtering for university bulletins
 echo ========================================================
 echo.
